@@ -1,9 +1,5 @@
-import { z } from "zod";
-import {
-	AuthProvider,
-	Role,
-	UserStatus,
-} from "../../../../generated/prisma/enums";
+import { z } from "zod"; 
+import { AuthProvider, Role, UserStatus } from "../../../generated/prisma/enums";
 
 export const RoleEnum = z.nativeEnum(Role);
 export const UserStatusEnum = z.nativeEnum(UserStatus);

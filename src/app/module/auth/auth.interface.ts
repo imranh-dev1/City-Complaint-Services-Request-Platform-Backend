@@ -1,8 +1,4 @@
-import type {
-	AuthProvider,
-	Role,
-	UserStatus,
-} from "../../../../generated/prisma/enums";
+import { AuthProvider, Role, UserStatus } from "../../../generated/prisma/enums";
 
 export interface ICitizenProfile {
 	nid?: string;
