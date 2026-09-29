@@ -17,9 +17,13 @@ import crypto from "crypto";
 import sendEmail from "../../utils/sendEmail";
 import { jwtUtils } from "../../utils/jwt";
 import type { JwtPayload, SignOptions } from "jsonwebtoken";
-import type { TokenPayload } from "google-auth-library"; 
+import type { TokenPayload } from "google-auth-library";
 import { redisClient } from "../../lib/redis";
-import { AuthProvider, Role, UserStatus } from "../../../generated/prisma/enums";
+import {
+	AuthProvider,
+	Role,
+	UserStatus,
+} from "../../../generated/prisma/enums";
 import { googleClient } from "../../lib/googleAuth";
 
 const registerUser = async (payload: IUserRegisterPayload) => {
