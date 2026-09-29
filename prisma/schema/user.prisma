@@ -1,0 +1,40 @@
+model User {
+    id                 String                @id @default(uuid())
+    name               String
+    email              String                @unique
+    password           String?
+    googleId           String?               @unique
+    authProvider       AuthProvider          @default(CREDENTIAL)
+    emailVerified      Boolean               @default(false)
+    role               Role                  @default(CITIZEN)
+    status             UserStatus            @default(ACTIVE)
+    needPasswordChange Boolean               @default(false)
+    imageUrl           String                @default("")
+    imagePublicId      String                @default("")
+    phone              String?
+    isDeleted          Boolean               @default(false)
+    deletedAt          DateTime?
+    complaints         Complaint[]
+    payments           Payment[]
+    feedbacks          Feedback[]
+    technician         Technician?
+    citizen            Citizen?
+    assignments        ComplaintAssignment[]
+    updates            ComplaintUpdate[]
+    notifications      Notification[]
+    assignedComplaints Complaint[]           @relation("AssignedTechnician")
+    auditLogs          AuditLog[]
+
+    departmentId      String?
+    department        Department? @relation("DepartmentStaff", fields: [departmentId], references: [id])
+    managedDepartment Department? @relation("DepartmentManager")
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([email])
+    @@index([role])
+    @@index([status])
+    @@index([departmentId])
+    @@map("users")
+}

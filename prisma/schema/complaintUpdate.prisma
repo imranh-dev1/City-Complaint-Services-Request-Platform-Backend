@@ -1,0 +1,17 @@
+model ComplaintUpdate {
+    id String @id @default(uuid())
+
+    complaintId String
+    updatedById String
+
+    message String
+    status  ComplaintStatus?
+
+    complaint Complaint @relation(fields: [complaintId], references: [id])
+    updatedBy User      @relation(fields: [updatedById], references: [id])
+
+    createdAt DateTime @default(now())
+
+    @@index([complaintId])
+    @@map("complaint_updates")
+}

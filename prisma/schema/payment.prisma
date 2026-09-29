@@ -1,0 +1,35 @@
+model Payment {
+    id                    String        @id @default(uuid())
+    amount                Decimal       @db.Decimal(10, 2)
+    status                PaymentStatus @default(PENDING)
+    currency              String        @default("BDT")
+    paymentGateway        String        @default("bkash")
+    merchantInvoiceNumber String        @unique
+    bkashPaymentId        String?       @unique
+    bkashTrxId            String?
+    stripeSessionId       String?       @unique
+    stripePaymentIntentId String?       @unique
+    stripeEventId         String?       @unique
+    stripeCheckoutUrl     String?
+    stripeCustomerId      String?
+    payerReference        String?
+    paidAt                String?
+    complaintId           String
+    userId                String
+    complaint             Complaint     @relation(fields: [complaintId], references: [id])
+    user                  User          @relation(fields: [userId], references: [id])
+    gatewayResponse       Json?
+    refundTrxId           String?
+    refundAmount          Decimal?      @db.Decimal(10, 2)
+    refundReason          String?
+    refundedAt            String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([complaintId])
+    @@index([userId])
+    @@index([status])
+    @@index([paymentGateway])
+    @@map("payments")
+}

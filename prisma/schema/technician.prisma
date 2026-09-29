@@ -1,0 +1,28 @@
+model Technician {
+    id     String @id @default(uuid())
+    userId String @unique
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    specialization String
+    experience     Int     @default(0)
+    bio            String? @db.Text
+    rating         Float   @default(0.0)
+    totalJobs      Int     @default(0)
+
+    availability TechAvailability @default(AVAILABLE)
+    isVerified   Boolean          @default(false)
+
+    serviceRadius Int    @default(10)
+    hourlyRate    Float?
+
+    isDeleted Boolean   @default(false)
+    deletedAt DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([userId])
+    @@index([specialization])
+    @@index([availability])
+    @@map("technicians")
+}

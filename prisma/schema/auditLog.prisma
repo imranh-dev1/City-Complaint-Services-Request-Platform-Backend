@@ -1,0 +1,15 @@
+model AuditLog {
+    id         String   @id @default(uuid())
+    userId     String?
+    action     String
+    entityType String
+    entityId   String?
+    metadata   Json?
+    user       User?    @relation(fields: [userId], references: [id])
+    createdAt  DateTime @default(now())
+
+    @@index([userId])
+    @@index([entityType])
+    @@index([createdAt])
+    @@map("audit_logs")
+}

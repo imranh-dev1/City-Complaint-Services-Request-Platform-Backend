@@ -1,0 +1,49 @@
+model Complaint {
+    id          String @id @default(uuid())
+    title       String
+    description String
+
+    address   String
+    latitude  Float?
+    longitude Float?
+
+    status   ComplaintStatus @default(SUBMITTED)
+    priority Priority        @default(MEDIUM)
+
+    serviceFee Decimal? @db.Decimal(10, 2)
+
+    citizenId  String
+    categoryId String
+
+    citizen  User     @relation(fields: [citizenId], references: [id])
+    category Category @relation(fields: [categoryId], references: [id])
+
+    departmentId String?
+    department   Department? @relation(fields: [departmentId], references: [id])
+
+    assignedTechnicianId String?
+    assignedTechnician   User?   @relation("AssignedTechnician", fields: [assignedTechnicianId], references: [id])
+
+    slaDeadline DateTime?
+    resolvedAt  DateTime?
+
+    attachments   ComplaintAttachment[]
+    assignments   ComplaintAssignment[]
+    updates       ComplaintUpdate[]
+    payments      Payment[]
+    feedback      Feedback?
+    notifications Notification[]
+
+    createdAt DateTime  @default(now())
+    updatedAt DateTime  @updatedAt
+    deletedAt DateTime?
+
+    @@index([citizenId])
+    @@index([categoryId])
+    @@index([status])
+    @@index([priority])
+    @@index([departmentId])
+    @@index([assignedTechnicianId])
+    @@index([createdAt])
+    @@map("complaints")
+}
