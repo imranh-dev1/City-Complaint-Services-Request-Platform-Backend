@@ -15,8 +15,7 @@ const getMyNotifications = catchAsync(async (req: Request, res: Response) => {
 		success: true,
 		message: "Notifications retrieved successfully",
 		data: result.data,
-		meta: result.meta,
-		extra: { unreadCount: result.unreadCount },
+		meta: result.meta
 	});
 });
 
