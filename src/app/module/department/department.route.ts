@@ -2,54 +2,54 @@ import { Router } from "express";
 import { auth } from "../../middleware/checkAuth";
 import { validateRequest } from "../../middleware/validateRequest";
 import { DepartmentController } from "./department.controller";
-import { DepartmentValidation } from "./department.validation"; 
+import { DepartmentValidation } from "./department.validation";
 import { Role } from "../../../generated/prisma/enums";
 
 const router = Router();
 
 router.post(
-    "/",
-    auth(Role.ADMIN, Role.SUPER_ADMIN),
-    validateRequest(DepartmentValidation.createDepartmentSchema),
-    DepartmentController.createDepartment,
+	"/",
+	auth(Role.ADMIN, Role.SUPER_ADMIN),
+	validateRequest(DepartmentValidation.createDepartmentSchema),
+	DepartmentController.createDepartment,
 );
 
 router.get(
-    "/",
-    auth(Role.ADMIN, Role.SUPER_ADMIN, Role.CITIZEN, Role.TECHNICIAN),
-    DepartmentController.getAllDepartments,
+	"/",
+	auth(Role.ADMIN, Role.SUPER_ADMIN, Role.CITIZEN, Role.TECHNICIAN),
+	DepartmentController.getAllDepartments,
 );
 
 router.get(
-    "/:id/technicians",
-    auth(Role.ADMIN, Role.SUPER_ADMIN, Role.TECHNICIAN),
-    DepartmentController.getDepartmentTechnicians,
+	"/:id/technicians",
+	auth(Role.ADMIN, Role.SUPER_ADMIN, Role.TECHNICIAN),
+	DepartmentController.getDepartmentTechnicians,
 );
 
 router.post(
-    "/:id/manager",
-    auth(Role.ADMIN, Role.SUPER_ADMIN),
-    validateRequest(DepartmentValidation.assignManagerSchema),
-    DepartmentController.assignManager,
+	"/:id/manager",
+	auth(Role.ADMIN, Role.SUPER_ADMIN),
+	validateRequest(DepartmentValidation.assignManagerSchema),
+	DepartmentController.assignManager,
 );
 
 router.get(
-    "/:id",
-    auth(Role.ADMIN, Role.SUPER_ADMIN, Role.CITIZEN, Role.TECHNICIAN),
-    DepartmentController.getDepartmentById,
+	"/:id",
+	auth(Role.ADMIN, Role.SUPER_ADMIN, Role.CITIZEN, Role.TECHNICIAN),
+	DepartmentController.getDepartmentById,
 );
 
 router.patch(
-    "/:id",
-    auth(Role.ADMIN, Role.SUPER_ADMIN),
-    validateRequest(DepartmentValidation.updateDepartmentSchema),
-    DepartmentController.updateDepartment,
+	"/:id",
+	auth(Role.ADMIN, Role.SUPER_ADMIN),
+	validateRequest(DepartmentValidation.updateDepartmentSchema),
+	DepartmentController.updateDepartment,
 );
 
 router.delete(
-    "/:id",
-    auth(Role.ADMIN, Role.SUPER_ADMIN),
-    DepartmentController.deleteDepartment,
+	"/:id",
+	auth(Role.ADMIN, Role.SUPER_ADMIN),
+	DepartmentController.deleteDepartment,
 );
 
 export const DepartmentRoutes = router;
