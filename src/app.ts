@@ -17,6 +17,7 @@ import { ComplaintRoutes } from "./app/module/complaint/complaint.route";
 import { FeedbackRoutes } from "./app/module/feedback/feedback.route";
 import { NotificationRoutes } from "./app/module/notification/notification.route";
 import { PaymentRoutes } from "./app/module/payment/payment.route";
+import { AdminRoutes } from "./app/module/admin/admin.route";
 
 const app: Application = express();
 
@@ -47,7 +48,7 @@ app.use("/api/v1/complaints", ComplaintRoutes);
 app.use("/api/v1/complaints/:id/feedback", FeedbackRoutes);
 app.use("/api/v1/notifications", NotificationRoutes);
 app.use("/api/v1/payments", PaymentRoutes);
-// app.use("/api/v1/admin", AdminRoutes);
+app.use("/api/v1/admin", AdminRoutes);
 
 app.use(notFound);
 app.use(globalErrorHandler);
