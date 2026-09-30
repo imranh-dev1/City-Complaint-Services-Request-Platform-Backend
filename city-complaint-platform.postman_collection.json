@@ -1,0 +1,1507 @@
+{
+	"info": {
+		"_postman_id": "9d5f1c2e-4c1a-4b8e-9f21-civic-platform-v1",
+		"name": "City Complaint & Service Request Platform - API v1",
+		"description": "Auto-generated from the Express + Prisma source in `src/app`.\n\nBASE URL: `{{baseUrl}}` (default `http://localhost:5000`)\n\n### How to use\n1. Set `baseUrl`.\n2. Run **01 Auth / Login (tester citizen)** (or Admin / Technician) — its test script saves `accessToken` + `refreshToken` into collection variables.\n3. Every request inherits collection auth (`Bearer {{accessToken}}`). Public requests override it with `noauth`.\n4. Run the requests top-to-bottom inside a folder — creation scripts store ids in variables (`departmentId`, `categoryId`, `complaintId`, `paymentId`, `notificationId`, ...).\n\n### Notes / known problems (verified against source)\n- `POST /api/v1/complaints/:id/feedback` and `GET /api/v1/complaints/:id/feedback` are BROKEN: `FeedbackRoutes` is mounted with `app.use('/api/v1/complaints/:id/feedback', ...)` and the sub-router does not enable `mergeParams`, so `req.params.id` is `undefined`. Keep the path variable for readability, but expect a 404 / wrong-complaint behaviour until it is fixed.\n- `POST /api/v1/payments/webhook/stripe` always fails with 400 — `req.rawBody` is never captured (`express.json()` has no `verify` hook).\n- All `/api/v1/admin/*` routes return 404 — `AdminRoutes` is commented out in `src/app.ts` (line 50).\n- `POST /api/v1/complaints` as `multipart/form-data` MUST send the body as a single `complaintPayload` JSON string field, otherwise every field arrives as a string and `latitude`/`longitude` (z.number) fail validation.\n- The webhook routes are intentionally unauthenticated (they are not behind `auth()`).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{accessToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:5000", "type": "string" },
+		{ "key": "accessToken", "value": "", "type": "string" },
+		{ "key": "refreshToken", "value": "", "type": "string" },
+		{ "key": "departmentId", "value": "", "type": "string" },
+		{ "key": "categoryId", "value": "", "type": "string" },
+		{ "key": "managerUserId", "value": "", "type": "string" },
+		{ "key": "technicianUserId", "value": "", "type": "string" },
+		{ "key": "complaintId", "value": "", "type": "string" },
+		{ "key": "resolvedComplaintId", "value": "", "type": "string" },
+		{ "key": "notificationId", "value": "", "type": "string" },
+		{ "key": "paymentId", "value": "", "type": "string" },
+		{ "key": "adminTargetUserId", "value": "", "type": "string" },
+		{ "key": "registerEmail", "value": "citizen.new@example.com", "type": "string" },
+		{ "key": "registerOtp", "value": "", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "00 - Health",
+			"item": [
+				{
+					"name": "Root / Welcome",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [{ "key": "Accept", "value": "application/json" }],
+						"url": {
+							"raw": "{{baseUrl}}/",
+							"host": ["{{baseUrl}}"],
+							"path": [""]
+						},
+						"description": "GET / — public liveness endpoint."
+					}
+				},
+				{
+					"name": "Route not found probe",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/does-not-exist",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "does-not-exist"]
+						},
+						"description": "Verifies `notFound` middleware returns 404 JSON."
+					}
+				}
+			]
+		},
+		{
+			"name": "01 - Auth",
+			"item": [
+				{
+					"name": "Register (citizen, sends OTP)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"New Citizen\",\n  \"email\": \"{{registerEmail}}\",\n  \"password\": \"secret123\",\n  \"phone\": \"+8801712345678\",\n  \"citizen\": {\n    \"nid\": \"1990123456789\",\n    \"address\": \"House 10, Road 5, Dhaka\",\n    \"wardNo\": \"52\",\n    \"area\": \"Uttara\"\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "register"]
+						},
+						"description": "POST /api/v1/auth/register — public.\nValidation: name >= 2 chars, valid email, password >= 6 chars (required for CREDENTIAL provider), phone `+?[1-9]\\d{1,14}`, citizen.nid 10-20 chars.\nStores a 6-digit OTP in Redis for 10 min (`citizen-registration-otp:<email>`) and emails it. No DB row is created yet.\nResponse: 201 `Verification OTP Sent`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+									"const b = pm.response.json();",
+									"pm.expect(b.success).to.eql(true);",
+									"pm.collectionVariables.set(\"registerEmail\", b.data ? pm.request.body.raw.match(/\"email\":\\s*\"([^\"]+)\"/)[1] : pm.collectionVariables.get(\"registerEmail\"));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Verify registration OTP (returns tokens)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{registerEmail}}\",\n  \"otp\": \"{{registerOtp}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/register-email-verify",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "register-email-verify"]
+						},
+						"description": "POST /api/v1/auth/register-email-verify — public.\nBody: `{ email, otp }` (otp = exactly 6 digits, from the email).\nCreates the CITIZEN user + Citizen profile, sets httpOnly cookies and returns `accessToken`/`refreshToken`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+									"const j = pm.response.json();",
+									"pm.collectionVariables.set(\"accessToken\", j.data.accessToken);",
+									"pm.collectionVariables.set(\"refreshToken\", j.data.refreshToken);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login (tester citizen)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"citizen@gmail.com\",\n  \"password\": \"citizen@12345\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "login"]
+						},
+						"description": "POST /api/v1/auth/login — public. Seeded citizen: `citizen@gmail.com` / `citizen@12345`.\nSets `accessToken` + `refreshToken` httpOnly cookies AND returns them in the body."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+									"const j = pm.response.json();",
+									"pm.collectionVariables.set(\"accessToken\", j.data.accessToken);",
+									"pm.collectionVariables.set(\"refreshToken\", j.data.refreshToken);",
+									"pm.collectionVariables.set(\"currentUserId\", j.data.userId || pm.collectionVariables.get(\"currentUserId\"));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login (tester admin)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@gmail.com\",\n  \"password\": \"admin@12345\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "login"]
+						},
+						"description": "POST /api/v1/auth/login — seeded admin: `admin@gmail.com` / `admin@12345`. Overwrites `{{accessToken}}` with an ADMIN token."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.collectionVariables.set(\"accessToken\", j.data.accessToken);",
+									"pm.collectionVariables.set(\"refreshToken\", j.data.refreshToken);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login (tester technician)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"technician@gmail.com\",\n  \"password\": \"technician@12345\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "login"]
+						},
+						"description": "POST /api/v1/auth/login — seeded technician: `technician@gmail.com` / `technician@12345`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.collectionVariables.set(\"accessToken\", j.data.accessToken);",
+									"pm.collectionVariables.set(\"refreshToken\", j.data.refreshToken);",
+									"pm.environment.set(\"technicianToken\", j.data.accessToken);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login (super admin)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"superadmin@gmail.com\",\n  \"password\": \"Super@admin12345\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "login"]
+						},
+						"description": "POST /api/v1/auth/login — seeded super admin: `superadmin@gmail.com` / `Super@admin12345`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"pm.collectionVariables.set(\"accessToken\", j.data.accessToken);",
+									"pm.collectionVariables.set(\"refreshToken\", j.data.refreshToken);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Google login",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"idToken\": \"PASTE_GOOGLE_ID_TOKEN_HERE\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/google",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "google"]
+						},
+						"description": "POST /api/v1/auth/google — public. Body: `{ idToken }` (Google OAuth id token, audience must equal `GOOGLE_CLIENT_ID`).\nBUG: unlike `/login`, this handler never calls `setAuthCookies`, so the browser gets no cookies — only the JSON body tokens."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data.accessToken) pm.collectionVariables.set(\"accessToken\", j.data.accessToken);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Me (current profile)",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Accept", "value": "application/json" }],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "me"]
+						},
+						"description": "GET /api/v1/auth/me — any authenticated role. Returns user + `citizen` relation (password omitted).\nBUG: the token also carries `name`/`role`, and `checkAuth` matches the DB row on `{id, email, name, role}` — renaming yourself (`PATCH /api/v1/users/profile-update`) or having your role changed makes every issued token fail with 401 until you log in again."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+									"const j = pm.response.json();",
+									"if (j.data && j.data.id) pm.collectionVariables.set(\"currentUserId\", j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Refresh token (cookie based)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/refresh-token",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "refresh-token"]
+						},
+						"description": "POST /api/v1/auth/refresh-token — public; reads the `refreshToken` **cookie** (no body, no Authorization header). Rotates both tokens and resets the cookies."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data.accessToken) pm.collectionVariables.set(\"accessToken\", j.data.accessToken);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Forgot password (sends OTP)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"citizen@gmail.com\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "forgot-password"]
+						},
+						"description": "POST /api/v1/auth/forgot-password — public. Body: `{ email }`. 6-digit OTP stored 5 min in Redis and emailed. Rejects BLOCKED/DELETED/unverified/Google-only accounts (account enumeration via distinct errors).\nNote: the response message leaks the submitted email back to the client."
+					}
+				},
+				{
+					"name": "Reset password",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"citizen@gmail.com\",\n  \"otp\": \"123456\",\n  \"newPassword\": \"NewPass@123\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/reset-password",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "reset-password"]
+						},
+						"description": "POST /api/v1/auth/reset-password — public. Body: `{ email, otp (6 chars), newPassword }`.\n`newPassword` must match `^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$`.\nExisting access/refresh tokens are NOT revoked after the reset."
+					}
+				},
+				{
+					"name": "Register staff (admin/technician)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"New Technician\",\n  \"email\": \"tech.new@example.com\",\n  \"password\": \"Tech@123456\",\n  \"role\": \"TECHNICIAN\",\n  \"phone\": \"+8801812345678\",\n  \"departmentId\": \"{{departmentId}}\",\n  \"specialization\": \"Electrical\",\n  \"experience\": 3\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/register-staff",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "register-staff"]
+						},
+						"description": "POST /api/v1/auth/register-staff — roles ADMIN, SUPER_ADMIN.\nBody: name, email, password (strong regex), role (`TECHNICIAN` | `ADMIN`), phone (BD format), departmentId (uuid, optional), specialization, experience.\nCreates the Technician profile automatically when role = TECHNICIAN.\nBUG: `actorId` is accepted by the service but never used — no audit log is written for staff creation."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data.id) pm.collectionVariables.set(\"technicianUserId\", j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/logout",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "logout"]
+						},
+						"description": "POST /api/v1/auth/logout — any authenticated role. Only clears the cookies; the JWTs stay valid until they expire and there is no Redis blocklist, so a stolen token keeps working."
+					}
+				}
+			]
+		},
+		{
+			"name": "02 - Users (profile)",
+			"item": [
+				{
+					"name": "Upload profile image",
+					"request": {
+						"method": "PATCH",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "profile-image",
+									"type": "file",
+									"src": [],
+									"contentType": "image/jpeg",
+									"description": "jpeg/png/webp/gif/avif, max 5 MB. Field name must be exactly `profile-image`."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/users/profile-image-upload",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "users", "profile-image-upload"]
+						},
+						"description": "PATCH /api/v1/users/profile-image-upload — any authenticated role. `multipart/form-data`, single file in field `profile-image`. Uploads to Cloudinary and replaces `imageUrl` / `imagePublicId`, destroying the previous image."
+					}
+				},
+				{
+					"name": "Update my profile",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Citizen One Updated\",\n  \"phone\": \"+8801712345678\",\n  \"citizen\": {\n    \"nid\": \"1990123456789\",\n    \"address\": \"House 10, Road 5, Dhaka\",\n    \"wardNo\": \"52\",\n    \"area\": \"Uttara\"\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/users/profile-update",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "users", "profile-update"]
+						},
+						"description": "PATCH /api/v1/users/profile-update — any authenticated role. All fields optional; the Citizen profile is upserted.\nBUG: changing `name` invalidates the current access token immediately (see `/auth/me`)."
+					}
+				},
+				{
+					"name": "Change password",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"oldPassword\": \"citizen@12345\",\n  \"newPassword\": \"NewPass@12345\",\n  \"confirmPassword\": \"NewPass@12345\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/users/change-password",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "users", "change-password"]
+						},
+						"description": "PATCH /api/v1/users/change-password — any authenticated role. Requires `oldPassword`, `newPassword`, `confirmPassword` (must match, and must differ from the old one). Minimum 6 characters — note this is WEAKER than the 8-char+complexity rule used by register/reset. Existing tokens are not revoked."
+					}
+				}
+			]
+		},
+		{
+			"name": "03 - Departments",
+			"item": [
+				{
+					"name": "Create department",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Road & Transport\",\n  \"code\": \"ROAD\",\n  \"description\": \"Road damage, footpath and transport issues\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments"]
+						},
+						"description": "POST /api/v1/departments — ADMIN, SUPER_ADMIN. name 3-100, code 2-20 `[A-Z0-9_-]+` (stored upper-cased), description <= 500."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+									"const j = pm.response.json();",
+									"if (j.data) pm.collectionVariables.set(\"departmentId\", j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List departments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments?page=1&limit=10&sortBy=createdAt&sortOrder=desc&search=road&isActive=true&withManager=true",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10", "description": "1-100, default 10" },
+								{ "key": "sortBy", "value": "createdAt", "description": "name | createdAt" },
+								{ "key": "sortOrder", "value": "desc" },
+								{ "key": "search", "value": "road", "description": "matches name or code" },
+								{ "key": "isActive", "value": "true" },
+								{ "key": "withManager", "value": "true", "description": "only departments that have a managerId" }
+							]
+						},
+						"description": "GET /api/v1/departments — all authenticated roles. Returns `{ data, meta }` with `manager` (password omitted) and `_count { staff, categories, complaints }`."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data[0]) pm.collectionVariables.set(\"departmentId\", j.data[0].id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get department by id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments/{{departmentId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments", "{{departmentId}}"]
+						},
+						"description": "GET /api/v1/departments/:id — all authenticated roles. Includes non-deleted `categories` and `_count`."
+					}
+				},
+				{
+					"name": "Department technicians",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments/{{departmentId}}/technicians",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments", "{{departmentId}}", "technicians"]
+						},
+						"description": "GET /api/v1/departments/:id/technicians — ADMIN, SUPER_ADMIN, TECHNICIAN. Returns technician users with their Technician profile (specialization, rating, availability, hourlyRate...). Sorted by name."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data[0]) pm.collectionVariables.set(\"technicianUserId\", j.data[0].id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Assign department manager",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"{{technicianUserId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments/{{departmentId}}/manager",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments", "{{departmentId}}", "manager"]
+						},
+						"description": "POST /api/v1/departments/:id/manager — ADMIN, SUPER_ADMIN. Body: `{ userId }` (uuid). Candidate must be ADMIN / SUPER_ADMIN / TECHNICIAN. The user is detached from any other department they managed."
+					}
+				},
+				{
+					"name": "Update department",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Road & Transport (Updated)\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments/{{departmentId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments", "{{departmentId}}"]
+						},
+						"description": "PATCH /api/v1/departments/:id — ADMIN, SUPER_ADMIN. Partial update (name / code / description / isActive)."
+					}
+				},
+				{
+					"name": "Delete department (soft)",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/departments/{{departmentId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "departments", "{{departmentId}}"]
+						},
+						"description": "DELETE /api/v1/departments/:id — ADMIN, SUPER_ADMIN. Soft delete (`deletedAt` + `isActive=false`); blocked when categories exist.\nBUG: the code explicitly allows re-creating a department whose name/code already exists on a soft-deleted row, but `Department.name`/`code` are `@unique` in Postgres — the insert will still fail with P2002."
+					}
+				}
+			]
+		},
+		{
+			"name": "04 - Categories",
+			"item": [
+				{
+					"name": "Create category",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Road Damage\",\n  \"description\": \"Potholes, cracks and damaged road surfaces\",\n  \"slaHours\": 72,\n  \"departmentId\": \"{{departmentId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/categories",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "categories"]
+						},
+						"description": "POST /api/v1/categories — ADMIN, SUPER_ADMIN. name 3-100 (globally unique), description <= 500, slaHours int 1-720 (default 48), departmentId (uuid, must be a non-deleted department).\n`slaHours` drives `Complaint.slaDeadline` and the SLA dashboard counters."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+									"const j = pm.response.json();",
+									"if (j.data) pm.collectionVariables.set(\"categoryId\", j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List categories",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/categories",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "categories"]
+						},
+						"description": "GET /api/v1/categories — all authenticated roles. No pagination. Returns only `isActive: true` + non-deleted categories with their department and complaint counts.\nBUG: admins therefore cannot see (or re-activate) an inactive category through this endpoint."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data[0]) pm.collectionVariables.set(\"categoryId\", j.data[0].id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get category by id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "categories", "{{categoryId}}"]
+						},
+						"description": "GET /api/v1/categories/:id — all authenticated roles. 404 when missing or soft-deleted."
+					}
+				},
+				{
+					"name": "Update category",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Road Damage\",\n  \"description\": \"Updated description\",\n  \"slaHours\": 96,\n  \"isActive\": true,\n  \"departmentId\": \"{{departmentId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "categories", "{{categoryId}}"]
+						},
+						"description": "PATCH /api/v1/categories/:id — ADMIN, SUPER_ADMIN. Partial update of name / description / isActive / slaHours / departmentId. No uniqueness check on `name` here — a duplicate surfaces as Prisma P2002 -> 400."
+					}
+				},
+				{
+					"name": "Delete category (soft)",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/categories/{{categoryId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "categories", "{{categoryId}}"]
+						},
+						"description": "DELETE /api/v1/categories/:id — ADMIN, SUPER_ADMIN. Soft delete + `isActive=false`. Existing complaints keep the relation. Same `@unique name` re-creation issue as departments."
+					}
+				}
+			]
+		},
+		{
+			"name": "05 - Complaints",
+			"item": [
+				{
+					"name": "Create complaint (JSON, no images)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Large pothole on main road\",\n  \"description\": \"A large pothole has formed in the middle of the road near the market and is dangerous for vehicles.\",\n  \"address\": \"Mirpur 10, Dhaka\",\n  \"latitude\": 23.7937,\n  \"longitude\": 90.4066,\n  \"priority\": \"HIGH\",\n  \"categoryId\": \"{{categoryId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints"]
+						},
+						"description": "POST /api/v1/complaints — CITIZEN, ADMIN, SUPER_ADMIN.\ntitle 5-200, description 10-2000, address 5-500, latitude -90..90, longitude -180..180, priority LOW|MEDIUM|HIGH|URGENT (default MEDIUM), categoryId (uuid, active category whose department is alive).\n`departmentId` + `slaDeadline` are derived server-side from the category. Returns the complaint with `sla` computed and pushes a notification + audit log."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+									"const j = pm.response.json();",
+									"if (j.data && j.data.id) pm.collectionVariables.set(\"complaintId\", j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Create complaint (multipart + images)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "complaintPayload",
+									"type": "text",
+									"value": "{\"title\":\"Street light not working\",\"description\":\"The street light in front of the school has been off for two weeks.\",\"address\":\"Mirpur 11, Dhaka\",\"latitude\":23.8041,\"longitude\":90.3797,\"priority\":\"MEDIUM\",\"categoryId\":\"{{categoryId}}\"}",
+									"contentType": "application/json",
+									"description": "MUST be a single JSON string field. Plain multipart text fields arrive as strings, and `latitude`/`longitude` are validated with `z.number()`, so the normal multipart form always fails validation."
+								},
+								{
+									"key": "images",
+									"type": "file",
+									"src": [],
+									"contentType": "image/jpeg",
+									"description": "Up to 5 files, 5 MB each; jpeg/png/webp/gif/avif."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints"]
+						},
+						"description": "POST /api/v1/complaints (multipart/form-data) — CITIZEN, ADMIN, SUPER_ADMIN.\nThe controller reads `req.body.complaintPayload` first and JSON-parses it when it is a string (`complaint.controller.ts:18-33`), which is how numeric fields survive multipart."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data.id) pm.collectionVariables.set(\"complaintId\", j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "My complaints (citizen)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/my-complaints?page=1&limit=10&sortBy=createdAt&sortOrder=desc&status=SUBMITTED&priority=HIGH",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "my-complaints"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "sortBy", "value": "createdAt", "description": "createdAt | updatedAt | priority | status" },
+								{ "key": "sortOrder", "value": "desc" },
+								{ "key": "status", "value": "SUBMITTED" },
+								{ "key": "priority", "value": "HIGH" }
+							]
+						},
+						"description": "GET /api/v1/complaints/my-complaints — CITIZEN only. Same filters as the list endpoint, always scoped to the caller. Supports `search`, `categoryId`, `departmentId`, `sla` too."
+					}
+				},
+				{
+					"name": "My assigned complaints (technician)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/my-assigned?page=1&limit=10&status=ASSIGNED",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "my-assigned"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "status", "value": "ASSIGNED" }
+							]
+						},
+						"description": "GET /api/v1/complaints/my-assigned — TECHNICIAN only. Scoped to `assignedTechnicianId = me`. Always sorted by `createdAt desc` (sortBy/sortOrder are ignored)."
+					}
+				},
+				{
+					"name": "Search complaints (?q=)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/search?q=pothole&page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "search"],
+							"query": [
+								{ "key": "q", "value": "pothole", "description": "Searches title, description, address and category name (case-insensitive)." },
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" }
+							]
+						},
+						"description": "GET /api/v1/complaints/search — any authenticated role (all complaints).\nBUG: the controller does `{ ...query, search: req.query.q }`, so `?search=` is always overwritten by `?q=`; if `q` is missing, `search` becomes `undefined` and the filter is silently dropped.\nDeclared AFTER `/my-complaints` etc. but BEFORE `/:id`, which is what keeps it from being swallowed by `/:id`."
+					}
+				},
+				{
+					"name": "List all complaints (role scoped)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints?page=1&limit=10&sortBy=createdAt&sortOrder=desc&status=IN_PROGRESS&priority=URGENT&sla=BREACHED",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10", "description": "max 100" },
+								{ "key": "sortBy", "value": "createdAt", "description": "createdAt | updatedAt | priority | status" },
+								{ "key": "sortOrder", "value": "desc" },
+								{ "key": "search", "value": "", "description": "title | description | address | category name" },
+								{ "key": "status", "value": "IN_PROGRESS", "description": "SUBMITTED | UNDER_REVIEW | ASSIGNED | IN_PROGRESS | RESOLVED | CLOSED | REJECTED | CANCELLED" },
+								{ "key": "priority", "value": "URGENT", "description": "LOW | MEDIUM | HIGH | URGENT" },
+								{ "key": "categoryId", "value": "", "disabled": true },
+								{ "key": "departmentId", "value": "", "disabled": true },
+								{ "key": "sla", "value": "BREACHED", "description": "ON_TRACK | APPROACHING | BREACHED | COMPLETED_ON_TIME | COMPLETED_LATE | PENDING" }
+							]
+						},
+						"description": "GET /api/v1/complaints — CITIZEN sees only their own; ADMIN/SUPER_ADMIN see all; TECHNICIAN sees assigned OR **any complaint of any department**.\nSECURITY BUG (`complaint.service.ts:184`): the technician scope is `OR: [{ assignedTechnicianId: me }, { departmentId: { not: null } }]` — the second branch matches virtually every complaint, so a technician can read the whole complaint list (including other citizens' addresses/descriptions).\nBUG: `sla` is filtered AFTER `skip/take`, so page sizes and `meta.total` become wrong whenever `sla` is used."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data[0]) pm.collectionVariables.set(\"complaintId\", j.data[0].id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Get complaint by id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}"]
+						},
+						"description": "GET /api/v1/complaints/:id — any authenticated role. 403 for a citizen who does not own it or a technician who is not assigned. Returns attachments, assignments, updates, payments, feedback, `_count` and the computed `sla` object."
+					}
+				},
+				{
+					"name": "Complaint updates timeline",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/updates",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "updates"]
+						},
+						"description": "GET /api/v1/complaints/:id/updates — any authenticated role with access. `ComplaintUpdate` rows (status notes + manual notes) newest first, each with its author (password omitted)."
+					}
+				},
+				{
+					"name": "Update complaint",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Large pothole on main road (updated)\",\n  \"description\": \"The pothole is now bigger and flooding after rain.\",\n  \"address\": \"Mirpur 10, Dhaka-1216\",\n  \"priority\": \"URGENT\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}"]
+						},
+						"description": "PATCH /api/v1/complaints/:id — any authenticated role with access. title / description / address / latitude / longitude / priority.\nA CITIZEN may only edit while the complaint is `SUBMITTED` or `UNDER_REVIEW`; admins/technicians have no such restriction.\n`categoryId` and `departmentId` cannot be changed after creation."
+					}
+				},
+				{
+					"name": "Delete complaint (soft)",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}"]
+						},
+						"description": "DELETE /api/v1/complaints/:id — any authenticated role with access. Sets `deletedAt` (soft delete), keeping the row for audit.\nA citizen can only delete while the status is SUBMITTED / UNDER_REVIEW / ASSIGNED / IN_PROGRESS and while no PENDING/PAID payment exists.\nMISSING GUARD: the route has no role filter, so a TECHNICIAN assigned to the complaint can soft-delete it."
+					}
+				},
+				{
+					"name": "Change complaint status",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"note\": \"Assigned to the field team for inspection.\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "status"]
+						},
+						"description": "PATCH /api/v1/complaints/:id/status — ADMIN/SUPER_ADMIN or the assigned TECHNICIAN (a citizen gets 403).\nLegal transitions — admin: SUBMITTED->UNDER_REVIEW|REJECTED, UNDER_REVIEW->REJECTED, RESOLVED->CLOSED. technician: ASSIGNED->IN_PROGRESS, IN_PROGRESS->RESOLVED.\n`note` (optional, <=1000) becomes the timeline message. On RESOLVED the assignment is completed, the technician is freed, `resolvedAt` is set and the citizen is notified — all inside one transaction."
+					}
+				},
+				{
+					"name": "Assign technician",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"technicianId\": \"{{technicianUserId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/assign",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "assign"]
+						},
+						"description": "POST /api/v1/complaints/:id/assign — ADMIN, SUPER_ADMIN. Body: `{ technicianId }` (uuid, role TECHNICIAN, not deleted, same department when both are set).\nSets status = ASSIGNED, marks the technician BUSY, rejects any previous PENDING assignment, and notifies both sides.\nBUG: the service checks the user exists but not that a Technician row exists, so `tx.technician.update` can fail with P2025 for a technician without a profile."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data.assignedTechnicianId) pm.collectionVariables.set(\"technicianUserId\", j.data.assignedTechnicianId);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Accept assignment (technician)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/accept",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "accept"]
+						},
+						"description": "POST /api/v1/complaints/:id/accept — TECHNICIAN only, and only the technician the complaint is assigned to, while status = ASSIGNED. Flips the assignment to ACCEPTED, sets status = IN_PROGRESS, adds a timeline entry and notifies the citizen."
+					}
+				},
+				{
+					"name": "Cancel complaint",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "cancel"]
+						},
+						"description": "POST /api/v1/complaints/:id/cancel — any authenticated role with access. Allowed only from SUBMITTED / UNDER_REVIEW / ASSIGNED / IN_PROGRESS. Rejects open assignments, frees the technician and sets status = CANCELLED.\nNOTE: unlike `/delete`, cancelling does NOT check for an active PENDING/PAID payment, so a paid complaint can be cancelled without a refund."
+					}
+				},
+				{
+					"name": "Add note to complaint",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Visited the site, drainage needs manual cleaning.\",\n  \"status\": \"IN_PROGRESS\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/notes",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "notes"]
+						},
+						"description": "POST /api/v1/complaints/:id/notes — any authenticated role with access. `message` 3-2000 chars, optional `status`.\nBUG: `status` here only tags the timeline row — it does NOT change `Complaint.status` and is not validated against the transition map, so notes can claim any status."
+					}
+				},
+				{
+					"name": "Add attachments to complaint",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "images", "type": "file", "src": [], "contentType": "image/jpeg" }
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{complaintId}}/attachments",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{complaintId}}", "attachments"]
+						},
+						"description": "POST /api/v1/complaints/:id/attachments — any authenticated role with access. `multipart/form-data`, field `images`, up to 5 files / 5 MB. Uploads to Cloudinary and appends `ComplaintAttachment` rows. Returns `{ count, attachments }`."
+					}
+				}
+			]
+		},
+		{
+			"name": "06 - Feedback (BROKEN ROUTE)",
+			"item": [
+				{
+					"name": "Submit feedback",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"rating\": 5,\n  \"comment\": \"Resolved quickly, thanks!\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{resolvedComplaintId}}/feedback",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{resolvedComplaintId}}", "feedback"]
+						},
+						"description": "POST /api/v1/complaints/:id/feedback — CITIZEN (admins also pass `auth`, but the service rejects non-citizens with 403).\nBody: `rating` int 1-5, `comment` <=1000. Only allowed when the complaint is RESOLVED or CLOSED and the citizen owns it; one feedback per complaint. Closes the complaint and notifies the citizen + technician.\n** BROKEN ** — `FeedbackRoutes` is mounted via `app.use('/api/v1/complaints/:id/feedback', ...)` without `mergeParams`, so `req.params.id` is `undefined` (verified locally with Express 5). Prisma strips `undefined` from the `where` clause, so the endpoint operates on an **arbitrary complaint** instead of the one in the URL. Fix: `Router({ mergeParams: true })` or add `/:id` to the sub-routes."
+					}
+				},
+				{
+					"name": "Get feedback for complaint",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/complaints/{{resolvedComplaintId}}/feedback",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "complaints", "{{resolvedComplaintId}}", "feedback"]
+						},
+						"description": "GET /api/v1/complaints/:id/feedback — any authenticated role with access (owner citizen / assigned technician / admin). Returns the Feedback row with its author (password omitted), or 404 when there is none.\n** BROKEN ** — same `req.params.id === undefined` problem as above; it will return another complaint's feedback (or 404)."
+					}
+				}
+			]
+		},
+		{
+			"name": "07 - Notifications",
+			"item": [
+				{
+					"name": "My notifications",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/notifications?page=1&limit=10&isRead=false",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "notifications"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "isRead", "value": "false" }
+							]
+						},
+						"description": "GET /api/v1/notifications — any authenticated role. Newest first, each with a slim `complaint` object.\nBUG: the service computes `unreadCount` but the controller only forwards `data` + `meta`, so `unreadCount` never reaches the client."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data[0]) pm.collectionVariables.set(\"notificationId\", j.data[0].id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mark notification as read",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}/read",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "notifications", "{{notificationId}}", "read"]
+						},
+						"description": "PATCH /api/v1/notifications/:id/read — owner only (the lookup filters by `userId`, so another user's id yields 404)."
+					}
+				},
+				{
+					"name": "Mark all as read",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/notifications/read-all",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "notifications", "read-all"]
+						},
+						"description": "PATCH /api/v1/notifications/read-all — owner only. Returns `{ updatedCount }`.\nDeclared BEFORE `/:id/read`, which is what prevents `read-all` from being parsed as an id."
+					}
+				}
+			]
+		},
+		{
+			"name": "08 - Payments",
+			"item": [
+				{
+					"name": "List gateways",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/gateways",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "gateways"]
+						},
+						"description": "GET /api/v1/payments/gateways — **public** (no `auth()` on this route). Returns `[{gateway: bkash|stripe, label, configured}]`.\nFor bKash this is `false` with the current `.env`: the code reads `BKASH_BASE_URL` but the file defines `BKASH_SENDBOX_URL`."
+					}
+				},
+				{
+					"name": "Initiate payment",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"complaintId\": \"{{complaintId}}\",\n  \"amount\": 500,\n  \"gateway\": \"bkash\",\n  \"callbackURL\": \"http://localhost:3000/payments/callback\",\n  \"successURL\": \"http://localhost:3000/payments/success\",\n  \"cancelURL\": \"http://localhost:3000/payments/cancelled\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/initiate",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "initiate"]
+						},
+						"description": "POST /api/v1/payments/initiate — CITIZEN, ADMIN, SUPER_ADMIN.\nBody: `complaintId` (uuid), `amount` (optional; falls back to `Complaint.serviceFee`), `gateway` (bkash|stripe, default bkash), `callbackURL` (bKash), `successURL`/`cancelURL` (Stripe).\nThe complaint must be SUBMITTED / UNDER_REVIEW / ASSIGNED / IN_PROGRESS and must not already have a PAID payment. Returns `paymentId`, `merchantInvoiceNumber`, `amount`, `currency` plus `bkashURL` or Stripe `checkoutUrl` + `sessionId`.\nBUG: for bKash `callbackURL` falls back to `config.bkash_callback_url` = `BKASH_CALLBACK_URL` (`http://localhost:5000/api/v1`), which is NOT an endpoint of this app — the redirect after payment 404s."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const j = pm.response.json();",
+									"if (j.data && j.data.paymentId) pm.collectionVariables.set(\"paymentId\", j.data.paymentId);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Execute payment (bKash)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/execute",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "{{paymentId}}", "execute"]
+						},
+						"description": "POST /api/v1/payments/:id/execute — owner or admin. Calls bKash `/execute`, then maps `transactionStatus` COMPLETED->PAID, CANCELLED|REFUNDED->CANCELLED, anything else->FAILED, writes an audit log and notifies the payer. Rejects Stripe payments (webhook only). Idempotent: an already-PAID payment returns `alreadyProcessed: true`."
+					}
+				},
+				{
+					"name": "Query payment status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "{{paymentId}}", "status"]
+						},
+						"description": "GET /api/v1/payments/:id/status — owner or admin. Polls the gateway: bKash `/payment/status`, or Stripe `checkout.sessions/:id?expand[]=payment_intent` (expired->CANCELLED, paid->PAID, otherwise PENDING). This is the documented recovery path for Stripe when the webhook is unavailable."
+					}
+				},
+				{
+					"name": "Get payment by id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "{{paymentId}}"]
+						},
+						"description": "GET /api/v1/payments/:id — CITIZEN (own only), ADMIN, SUPER_ADMIN. Note that `/my-payments` and `/admin/all` are declared before `/:id`, so they are not swallowed by it.\nNOTE: TECHNICIAN is not in this route's role list but IS allowed on `/my-payments`."
+					}
+				},
+				{
+					"name": "My payments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/my-payments?page=1&limit=10&status=PAID&gateway=bkash",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "my-payments"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "status", "value": "PAID", "description": "PENDING | PAID | FAILED | CANCELLED | REFUNDED" },
+								{ "key": "gateway", "value": "bkash" }
+							]
+						},
+						"description": "GET /api/v1/payments/my-payments — any authenticated role, always scoped to the caller."
+					}
+				},
+				{
+					"name": "All payments (admin)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/admin/all?page=1&limit=10&status=PAID&complaintId={{complaintId}}&gateway=bkash",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "admin", "all"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "status", "value": "PAID" },
+								{ "key": "complaintId", "value": "{{complaintId}}" },
+								{ "key": "gateway", "value": "bkash" }
+							]
+						},
+						"description": "GET /api/v1/payments/admin/all — ADMIN, SUPER_ADMIN. Same filters plus `complaintId`, and it includes the payer object."
+					}
+				},
+				{
+					"name": "Refund payment (admin)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"amount\": 500,\n  \"reason\": \"Service could not be delivered\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/refund",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "{{paymentId}}", "refund"]
+						},
+						"description": "POST /api/v1/payments/:id/refund — ADMIN, SUPER_ADMIN. Only a PAID payment can be refunded. `reason` 3-300 chars required; `amount` optional.\n** BUG ** — `toAmountString(payment.amount, payload.amount)` returns `payment.amount` whenever it is non-null, so the requested partial `amount` is silently ignored and the FULL amount is always refunded (both gateways).\nAlso: Stripe refunds use the hardcoded reason `requested_by_customer`, and `refundAmount`/`refundedAt` are stored as `String` columns."
+					}
+				},
+				{
+					"name": "bKash webhook",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentID\": \"{{bkashPaymentId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/webhook/bkash",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "webhook", "bkash"]
+						},
+						"description": "POST /api/v1/payments/webhook/bkash — **public** (no auth, no signature check).\nBody/query: `paymentID` (or `paymentId`). It looks the payment up by `bkashPaymentId`, re-queries bKash for the authoritative status and applies it.\n`POST /api/v1/payments/webhook` is a duplicate alias of the same handler.\nSECURITY: because there is no HMAC/signature verification, anyone who learns a `paymentID` can force a status sync."
+					}
+				},
+				{
+					"name": "Stripe webhook",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Stripe-Signature", "value": "t=1700000000,v1=replace_with_real_hmac" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"evt_test\",\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"cs_test_123\",\n      \"payment_status\": \"paid\",\n      \"status\": \"complete\",\n      \"metadata\": { \"paymentId\": \"{{paymentId}}\" }\n    }\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/payments/webhook/stripe",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "payments", "webhook", "stripe"]
+						},
+						"description": "POST /api/v1/payments/webhook/stripe — **public**, `Stripe-Signature` header required, signature verified with HMAC-SHA256 over `t.rawBody` and replay-protected via a Redis `stripe:event:<id>` key (7 days, DB fallback).\nHandled events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `payment_intent.succeeded`, `payment_intent.payment_failed|canceled`, `charge.refunded`.\n** BROKEN ** — the controller needs `req.rawBody`, but `app.ts` registers plain `express.json()` with no `verify` hook, so `rawBody` is always `undefined` and every call fails with 400 \"Raw request body is required for Stripe signature verification\". Fix: `express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } })`.\nSecond bug: `payment_intent.succeeded` events can never be matched — the payment only learns its `stripePaymentIntentId` from a `checkout.session.*` event, so the intent event falls through to `metadata.paymentId` (absent on a PaymentIntent) and is reported as `ignored: true`."
+					}
+				}
+			]
+		},
+		{
+			"name": "09 - Admin (routes NOT mounted -> 404)",
+			"item": [
+				{
+					"name": "All users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/admin/users?page=1&limit=10&search=citizen&role=CITIZEN&status=ACTIVE",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "admin", "users"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "search", "value": "citizen", "description": "name | email | phone" },
+								{ "key": "role", "value": "CITIZEN" },
+								{ "key": "status", "value": "ACTIVE" }
+							]
+						},
+						"description": "GET /api/v1/admin/users — ADMIN, SUPER_ADMIN.\n** Returns 404 ** — `app.use('/api/v1/admin', AdminRoutes)` is commented out in `src/app.ts:50`; the import was removed too, so the module is dead code. Uncomment to enable."
+					}
+				},
+				{
+					"name": "Update user status",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"BLOCKED\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/admin/users/{{adminTargetUserId}}/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "admin", "users", "{{adminTargetUserId}}", "status"]
+						},
+						"description": "PATCH /api/v1/admin/users/:id/status — ADMIN, SUPER_ADMIN. Body: `{ status: ACTIVE|BLOCKED|DELETED }`. You cannot change your own status, and changing a SUPER_ADMIN requires the caller to be a SUPER_ADMIN.\nCAVEAT: setting `DELETED` here does NOT set `isDeleted`/`deletedAt`, so the user stays active everywhere else."
+					}
+				},
+				{
+					"name": "Update user role",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"role\": \"TECHNICIAN\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/admin/users/{{adminTargetUserId}}/role",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "admin", "users", "{{adminTargetUserId}}", "role"]
+						},
+						"description": "PATCH /api/v1/admin/users/:id/role — **SUPER_ADMIN only**. Body: `{ role }`. Auto-creates the Technician / Citizen profile when missing. You cannot change your own role.\nCAVEAT: demoting a TECHNICIAN leaves the Technician row in place, and the target's existing tokens stay valid until they expire (the JWT still carries the old role, though `checkAuth` re-reads `role` from the DB, so old tokens stop matching -> forced re-login)."
+					}
+				},
+				{
+					"name": "Assign user to department",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"departmentId\": \"{{departmentId}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/admin/users/{{adminTargetUserId}}/department",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "admin", "users", "{{adminTargetUserId}}", "department"]
+						},
+						"description": "PATCH /api/v1/admin/users/:id/department — ADMIN, SUPER_ADMIN. Body: `{ departmentId }`. Only TECHNICIAN / ADMIN / SUPER_ADMIN targets."
+					}
+				},
+				{
+					"name": "Dashboard stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/admin/dashboard-stats",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "admin", "dashboard-stats"]
+						},
+						"description": "GET /api/v1/admin/dashboard-stats — ADMIN, SUPER_ADMIN. 15 aggregations in parallel: users by role, complaints by status, 5 recent complaints, SLA breached/approaching (<24h), revenue sum of PAID payments, department/category counts, average feedback rating, top 5 categories by complaint count.\nNOTE: `sla.approaching` uses `slaDeadline <= now+24h`, so it also re-counts already-breached-but-unresolved complaints."
+					}
+				},
+				{
+					"name": "Audit logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/admin/audit-logs?page=1&limit=20&entityType=COMPLAINT&action=COMPLAINT_CREATED",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "admin", "audit-logs"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "20" },
+								{ "key": "entityType", "value": "COMPLAINT", "description": "COMPLAINT | PAYMENT | DEPARTMENT | CATEGORY | USER" },
+								{ "key": "action", "value": "COMPLAINT_CREATED" },
+								{ "key": "userId", "value": "", "disabled": true }
+							]
+						},
+						"description": "GET /api/v1/admin/audit-logs — ADMIN, SUPER_ADMIN. Newest first, includes the acting user. `writeAuditLog` swallows all failures, so entries can be silently lost."
+					}
+				}
+			]
+		}
+	]
+}
