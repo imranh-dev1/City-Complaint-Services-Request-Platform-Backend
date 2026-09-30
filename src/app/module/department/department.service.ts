@@ -1,7 +1,10 @@
 import httpStatus from "http-status";
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
-import type { ICreateDepartment, IUpdateDepartment } from "./department.interface";
+import type {
+	ICreateDepartment,
+	IUpdateDepartment,
+} from "./department.interface";
 import { Role } from "../../../generated/prisma/enums";
 import { writeAuditLog } from "../../utils/auditLog";
 import {
