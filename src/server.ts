@@ -3,7 +3,6 @@ import config from "./app/config";
 import { prisma } from "./app/lib/prisma";
 import { redisClient } from "./app/lib/redis";
 import {
-	seedDepartmentsAndCategories,
 	seedSuperAdmin,
 	seedTesterAdmin,
 	seedTesterCitizen,
@@ -21,7 +20,7 @@ const main = async () => {
 		await seedTesterAdmin();
 		await seedTesterCitizen();
 		await seedTesterTechnician();
-		await seedDepartmentsAndCategories();
+		// await seedDepartmentsAndCategories();
 
 		await redisClient.connect();
 		console.log("Connected to the Redis successfully.");

@@ -200,132 +200,133 @@ export const seedTesterTechnician = async () => {
 		console.log("Error Seeding Tester Technician : ", error);
 	}
 };
-export const seedDepartmentsAndCategories = async () => {
-	const departments = [
-		{
-			name: "Road & Transport",
-			code: "ROAD",
-			description:
-				"Handles road damage, footpath issues and public transport problems.",
-			categories: [
-				{
-					name: "Road Damage",
-					description: "Potholes, cracks and damaged road surfaces.",
-					slaHours: 72,
-				},
-				{
-					name: "Footpath Repair",
-					description: "Broken or obstructed footpaths.",
-					slaHours: 120,
-				},
-			],
-		},
-		{
-			name: "Waste Management",
-			code: "WASTE",
-			description: "Garbage collection, dumping and cleanliness issues.",
-			categories: [
-				{
-					name: "Garbage Collection",
-					description: "Missed or irregular waste collection.",
-					slaHours: 48,
-				},
-				{
-					name: "Drainage Cleaning",
-					description: "Blocked or overflowing drains.",
-					slaHours: 48,
-				},
-			],
-		},
-		{
-			name: "Water & Sewerage",
-			code: "WATER",
-			description: "Water supply, leakage and sewerage problems.",
-			categories: [
-				{
-					name: "Water Supply",
-					description: "No water or low pressure supply.",
-					slaHours: 48,
-				},
-				{
-					name: "Sewerage",
-					description: "Blocked sewer lines and overflow.",
-					slaHours: 72,
-				},
-			],
-		},
-		{
-			name: "Electricity",
-			code: "ELEC",
-			description: "Street lighting and electrical infrastructure complaints.",
-			categories: [
-				{
-					name: "Street Light",
-					description: "Faulty or damaged street lights.",
-					slaHours: 48,
-				},
-				{
-					name: "Power Outage",
-					description: "Localized power failures.",
-					slaHours: 24,
-				},
-			],
-		},
-		{
-			name: "Public Health",
-			code: "HEALTH",
-			description: "Public health and sanitation issues.",
-			categories: [
-				{
-					name: "Public Health",
-					description: "Health hazards and sanitation problems.",
-					slaHours: 96,
-				},
-			],
-		},
-	];
 
-	for (const dept of departments) {
-		const existingDept = await prisma.department.findUnique({
-			where: { code: dept.code },
-		});
+// export const seedDepartmentsAndCategories = async () => {
+// 	const departments = [
+// 		{
+// 			name: "Road & Transport",
+// 			code: "ROAD",
+// 			description:
+// 				"Handles road damage, footpath issues and public transport problems.",
+// 			categories: [
+// 				{
+// 					name: "Road Damage",
+// 					description: "Potholes, cracks and damaged road surfaces.",
+// 					slaHours: 72,
+// 				},
+// 				{
+// 					name: "Footpath Repair",
+// 					description: "Broken or obstructed footpaths.",
+// 					slaHours: 120,
+// 				},
+// 			],
+// 		},
+// 		{
+// 			name: "Waste Management",
+// 			code: "WASTE",
+// 			description: "Garbage collection, dumping and cleanliness issues.",
+// 			categories: [
+// 				{
+// 					name: "Garbage Collection",
+// 					description: "Missed or irregular waste collection.",
+// 					slaHours: 48,
+// 				},
+// 				{
+// 					name: "Drainage Cleaning",
+// 					description: "Blocked or overflowing drains.",
+// 					slaHours: 48,
+// 				},
+// 			],
+// 		},
+// 		{
+// 			name: "Water & Sewerage",
+// 			code: "WATER",
+// 			description: "Water supply, leakage and sewerage problems.",
+// 			categories: [
+// 				{
+// 					name: "Water Supply",
+// 					description: "No water or low pressure supply.",
+// 					slaHours: 48,
+// 				},
+// 				{
+// 					name: "Sewerage",
+// 					description: "Blocked sewer lines and overflow.",
+// 					slaHours: 72,
+// 				},
+// 			],
+// 		},
+// 		{
+// 			name: "Electricity",
+// 			code: "ELEC",
+// 			description: "Street lighting and electrical infrastructure complaints.",
+// 			categories: [
+// 				{
+// 					name: "Street Light",
+// 					description: "Faulty or damaged street lights.",
+// 					slaHours: 48,
+// 				},
+// 				{
+// 					name: "Power Outage",
+// 					description: "Localized power failures.",
+// 					slaHours: 24,
+// 				},
+// 			],
+// 		},
+// 		{
+// 			name: "Public Health",
+// 			code: "HEALTH",
+// 			description: "Public health and sanitation issues.",
+// 			categories: [
+// 				{
+// 					name: "Public Health",
+// 					description: "Health hazards and sanitation problems.",
+// 					slaHours: 96,
+// 				},
+// 			],
+// 		},
+// 	];
 
-		const department =
-			existingDept ??
-			(await prisma.department.create({
-				data: {
-					name: dept.name,
-					code: dept.code,
-					description: dept.description,
-				},
-			}));
+// 	for (const dept of departments) {
+// 		const existingDept = await prisma.department.findUnique({
+// 			where: { code: dept.code },
+// 		});
 
-		if (existingDept) {
-			console.log(`Department Already Exists: ${dept.code}`);
-		} else {
-			console.log("Department Created : ", department.code);
-		}
+// 		const department =
+// 			existingDept ??
+// 			(await prisma.department.create({
+// 				data: {
+// 					name: dept.name,
+// 					code: dept.code,
+// 					description: dept.description,
+// 				},
+// 			}));
 
-		for (const category of dept.categories) {
-			const existingCategory = await prisma.category.findUnique({
-				where: { name: category.name },
-			});
+// 		if (existingDept) {
+// 			console.log(`Department Already Exists: ${dept.code}`);
+// 		} else {
+// 			console.log("Department Created : ", department.code);
+// 		}
 
-			if (existingCategory) {
-				console.log(`Category Already Exists: ${category.name}`);
-				continue;
-			}
+// 		for (const category of dept.categories) {
+// 			const existingCategory = await prisma.category.findUnique({
+// 				where: { name: category.name },
+// 			});
 
-			const created = await prisma.category.create({
-				data: {
-					name: category.name,
-					description: category.description,
-					slaHours: category.slaHours,
-					departmentId: department.id,
-				},
-			});
+// 			if (existingCategory) {
+// 				console.log(`Category Already Exists: ${category.name}`);
+// 				continue;
+// 			}
 
-			console.log("Category Created : ", created.name);
-		}
-	}
-};
+// 			const created = await prisma.category.create({
+// 				data: {
+// 					name: category.name,
+// 					description: category.description,
+// 					slaHours: category.slaHours,
+// 					departmentId: department.id,
+// 				},
+// 			});
+
+// 			console.log("Category Created : ", created.name);
+// 		}
+// 	}
+// };
