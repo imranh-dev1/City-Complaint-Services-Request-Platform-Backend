@@ -47,4 +47,18 @@ export default {
 	tester_technician_name: process.env.TESTER_TECHNICIAN_NAME!,
 	tester_technician_email: process.env.TESTER_TECHNICIAN_EMAIL!,
 	tester_technician_password: process.env.TESTER_TECHNICIAN_PASSWORD!,
+
+	bkash_base_url: process.env.BKASH_BASE_URL!,
+	bkash_username: process.env.BKASH_USERNAME!,
+	bkash_password: process.env.BKASH_PASSWORD!,
+	bkash_app_key: process.env.BKASH_APP_KEY!,
+	bkash_app_secret: process.env.BKASH_APP_SECRET!,
+	bkash_callback_url: process.env.BKASH_CALLBACK_URL!,
+
+	stripe_secret_key: process.env.STRIPE_SECRET_KEY!,
+	stripe_webhook_secret: process.env.STRIPE_WEBHOOK_SECRET!,
+	stripe_currency: process.env.STRIPE_CURRENCY ?? "BDT",
+	stripe_success_url: process.env.STRIPE_SUCCESS_URL ?? "",
+	stripe_cancel_url: process.env.STRIPE_CANCEL_URL ?? "",
+	stripe_webhook_tolerance: process.env.STRIPE_WEBHOOK_TOLERANCE ?? "300",
 };
