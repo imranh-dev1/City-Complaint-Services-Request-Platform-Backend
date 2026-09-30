@@ -1,12 +1,12 @@
 export interface ICitizenProfileUpdate {
-    nid?: string;
-    address?: string;
-    wardNo?: string;
-    area?: string;
+	nid?: string;
+	address?: string;
+	wardNo?: string;
+	area?: string;
 }
 
 export interface IUserProfileUpdate {
-    name?: string;
-    phone?: string | null;
-    citizen?: ICitizenProfileUpdate;
+	name?: string;
+	phone?: string | null;
+	citizen?: ICitizenProfileUpdate;
 }
