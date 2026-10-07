@@ -4,12 +4,12 @@ import config from "../config";
 const ONE_DAY_MS = 1000 * 60 * 60 * 24;
 const SEVEN_DAYS_MS = ONE_DAY_MS * 7;
 
-const isProduction = config.node_env === "production";
+const isDevelopment = config.node_env === "development";
 
 const baseOptions: CookieOptions = {
 	httpOnly: true,
-	secure: isProduction,
-	sameSite: isProduction ? "none" : "lax",
+	secure: isDevelopment ? false : true,
+	sameSite: isDevelopment ? "lax" : "none",
 };
 
 export const setAuthCookies = (
