@@ -80,7 +80,9 @@ const getMe = catchAsync(async (req: Request, res: Response) => {
 });
 
 const googleLogin = catchAsync(async (req: Request, res: Response) => {
-	const { accessToken, refreshToken } = await AuthServices.googleLogin(req.body);
+	const { accessToken, refreshToken } = await AuthServices.googleLogin(
+		req.body,
+	);
 
 	setAuthCookies(res, accessToken, refreshToken);
 
